@@ -1,0 +1,2 @@
+# ppsnr
+Parallel PSNR
