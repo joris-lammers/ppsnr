@@ -69,12 +69,23 @@ func psnr(frameNr int, YR, YC []byte) (psnrValue float64) {
 	return
 }
 
-func main() {
-	flag.Parse()
-	frameSize := (flagWidth * flagHeight * 3) / 2
+func yuvFrameSize(w, h int) int {
+	return (w * h * 3) / 2
+}
 
-	inFile, _ := os.Open(flagYuvRef)
-	outFile, _ := os.Open(flagYuvCompr)
+func yuvYSize(w, h int) int {
+	return w * h
+}
+
+func yuvUVSize(w, h int) int {
+	return (w * h) / 2
+}
+
+func calculatePsnr(refFN, comprFN string, w, h int) (psnrValues []float64) {
+	frameSize := yuvFrameSize(w, h)
+
+	inFile, _ := os.Open(refFN)
+	outFile, _ := os.Open(comprFN)
 	inFrames, outFrames := getInAndOutFrames(inFile, outFile, frameSize)
 	var framesToCompare int
 	if inFrames < outFrames {
@@ -84,29 +95,33 @@ func main() {
 	}
 
 	work, wait := NewWorkersPool(runtime.NumCPU())
-	psnrValues := make([]float64, framesToCompare)
-
-	if flagVerbose {
-		fmt.Printf("Number of CPU cores %d\n", runtime.NumCPU())
-		fmt.Printf("YUV frame size is %d bytes\n", frameSize)
-		fmt.Printf("In: %d frames, Out: %d frames => Compare %d frames\n", inFrames, outFrames, framesToCompare)
-	}
+	psnrValues = make([]float64, framesToCompare)
 
 	for n := 0; n < framesToCompare; n++ {
-		YR := make([]byte, (frameSize*2)/3)
-		YC := make([]byte, (frameSize*2)/3)
+		YR := make([]byte, yuvYSize(w, h))
+		YC := make([]byte, yuvYSize(w, h))
 		inFile.Read(YR)
 		outFile.Read(YC)
 		frameNr := n
 		work <- func(id int) {
 			psnrValues[frameNr] = psnr(n, YR, YC)
-			//fmt.Printf("W%d -> PSNR for frame %d is %3.2f\n", id, frameNr, psnrValues[frameNr])
 		}
-		inFile.Seek(int64(frameSize/3), 1)
-		outFile.Seek(int64(frameSize/3), 1)
+		inFile.Seek(int64(yuvUVSize(w, h)), 1)
+		outFile.Seek(int64(yuvUVSize(w, h)), 1)
 	}
 	close(work)
 	wait.Wait()
+
+	return
+}
+
+func main() {
+	flag.Parse()
+	if flagVerbose {
+		fmt.Printf("Number of CPU cores %d\n", runtime.NumCPU())
+	}
+	psnrValues := calculatePsnr(flagYuvRef, flagYuvCompr, flagWidth, flagHeight)
+
 	for frameNr, p := range psnrValues {
 		fmt.Printf("PSNR for frame %d is %3.2f\n", frameNr, p)
 	}
