@@ -6,6 +6,7 @@ import (
 	"math"
 	"os"
 	"runtime"
+	"sync"
 )
 
 var flagWidth int
@@ -22,6 +23,25 @@ func init() {
 	flag.IntVar(&flagHeight, "h", 720, "Height of video")
 	flag.StringVar(&flagYuvRef, "r", "input.yuv", "Reference YUV")
 	flag.StringVar(&flagYuvCompr, "c", "output.yuv", "Compressed/Output YUV")
+}
+
+// NewWorkersPool starts n workers
+// This function starts n workers (goroutines) and is ready to receive work.
+// It returns a work and a wait!
+func NewWorkersPool(n int) (chan<- func(int), *sync.WaitGroup) {
+	work := make(chan func(int), n)
+	var wait sync.WaitGroup
+	wait.Add(n)
+	for ; n > 0; n-- {
+		// idiom: passing a parameter to the "anonymous closure" function
+		go func(id int) {
+			for x := range work {
+				x(id)
+			}
+			wait.Done()
+		}(n)
+	}
+	return work, &wait
 }
 
 func getInAndOutFrames(inFile, outFile *os.File, frameSize int) (inFrames, outFrames int) {
@@ -62,6 +82,9 @@ func main() {
 		framesToCompare = outFrames
 	}
 
+	work, wait := NewWorkersPool(runtime.NumCPU())
+	psnrValues := make([]float64, framesToCompare)
+
 	fmt.Printf("In: %d frames, Out: %d frames => Compare %d frames\n", inFrames, outFrames, framesToCompare)
 
 	for n := 0; n < framesToCompare; n++ {
@@ -69,9 +92,17 @@ func main() {
 		YC := make([]byte, (frameSize*2)/3)
 		inFile.Read(YR)
 		outFile.Read(YC)
-		p := psnr(n, YR, YC)
+		frameNr := n
+		work <- func(id int) {
+			psnrValues[frameNr] = psnr(n, YR, YC)
+			//fmt.Printf("W%d -> PSNR for frame %d is %3.2f\n", id, frameNr, psnrValues[frameNr])
+		}
 		inFile.Seek(int64(frameSize/3), 1)
 		outFile.Seek(int64(frameSize/3), 1)
-		fmt.Printf("PSNR for frame %d is %3.2f\n", n, p)
+	}
+	close(work)
+	wait.Wait()
+	for frameNr, p := range psnrValues {
+		fmt.Printf("PSNR for frame %d is %3.2f\n", frameNr, p)
 	}
 }
