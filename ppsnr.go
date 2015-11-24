@@ -13,16 +13,18 @@ var flagWidth int
 var flagHeight int
 var flagYuvRef string
 var flagYuvCompr string
+var flagVerbose bool
 
 func init() {
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Usage: %s -w WIDTH -h HEIGHT -r REF_YUV -c COMPR_YUV\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "Usage: %s -w WIDTH -h HEIGHT -r REF_YUV -c COMPR_YUV -v\n", os.Args[0])
 		flag.PrintDefaults()
 	}
 	flag.IntVar(&flagWidth, "w", 1280, "Width of video")
 	flag.IntVar(&flagHeight, "h", 720, "Height of video")
 	flag.StringVar(&flagYuvRef, "r", "input.yuv", "Reference YUV")
 	flag.StringVar(&flagYuvCompr, "c", "output.yuv", "Compressed/Output YUV")
+	flag.BoolVar(&flagVerbose, "v", false, "Verbose output")
 }
 
 // NewWorkersPool starts n workers
@@ -70,8 +72,7 @@ func psnr(frameNr int, YR, YC []byte) (psnrValue float64) {
 func main() {
 	flag.Parse()
 	frameSize := (flagWidth * flagHeight * 3) / 2
-	fmt.Printf("Number of CPU cores %d\n", runtime.NumCPU())
-	fmt.Printf("YUV frame size is %d bytes\n", frameSize)
+
 	inFile, _ := os.Open(flagYuvRef)
 	outFile, _ := os.Open(flagYuvCompr)
 	inFrames, outFrames := getInAndOutFrames(inFile, outFile, frameSize)
@@ -85,7 +86,11 @@ func main() {
 	work, wait := NewWorkersPool(runtime.NumCPU())
 	psnrValues := make([]float64, framesToCompare)
 
-	fmt.Printf("In: %d frames, Out: %d frames => Compare %d frames\n", inFrames, outFrames, framesToCompare)
+	if flagVerbose {
+		fmt.Printf("Number of CPU cores %d\n", runtime.NumCPU())
+		fmt.Printf("YUV frame size is %d bytes\n", frameSize)
+		fmt.Printf("In: %d frames, Out: %d frames => Compare %d frames\n", inFrames, outFrames, framesToCompare)
+	}
 
 	for n := 0; n < framesToCompare; n++ {
 		YR := make([]byte, (frameSize*2)/3)
