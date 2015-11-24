@@ -12,7 +12,7 @@ The project contains two example YUV files that are also used by the unit test.
 These YUV files were taken from [the H.264 reference 
 software](http://iphome.hhi.de/suehring/tml/)
 
-Example how to run the binary for the example YUV files (QCIF resolution)
+Running the binary for the example YUV files (QCIF resolution) is done as:
 ```
 ppsnr -r input.yuv -c output.yuv -h 176 -w 144
 ```
