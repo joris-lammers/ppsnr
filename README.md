@@ -1,4 +1,6 @@
 # PPSNR
+[![Build Status](https://travis-ci.org/joris-lammers/ppsnr.svg)](https://travis-ci.org/joris-lammers/ppsnr)
+
 Short for **Parallel PSNR**. Basically it calculates the PSNR between two YUV420
 video sequences by distributing the calculation per frame across the available
 CPU cores.
