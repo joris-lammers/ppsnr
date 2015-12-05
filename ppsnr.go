@@ -1,3 +1,5 @@
+// This utility allows you to calculate the PSNR for every frame between a
+// reference YUV420 (8-bit) file and another YUV
 package main
 
 import (
@@ -54,7 +56,7 @@ func getInAndOutFrames(inFile, outFile *os.File, frameSize int) (inFrames, outFr
 	return
 }
 
-func psnr(frameNr int, YR, YC []byte) (psnrValue float64) {
+func psnr(YR, YC []byte) (psnrValue float64) {
 	var noise float64
 	for n := 0; n < len(YR); n++ {
 		yr := float64(YR[n])
@@ -104,8 +106,10 @@ func calculatePsnr(refFN, comprFN string, w, h int) (psnrValues []float64) {
 		outFile.Read(YC)
 		frameNr := n
 		work <- func(id int) {
-			psnrValues[frameNr] = psnr(n, YR, YC)
+			// The id argument can be used to know wich goroutine is executing the work
+			psnrValues[frameNr] = psnr(YR, YC)
 		}
+		// Skip the UV
 		inFile.Seek(int64(yuvUVSize(w, h)), 1)
 		outFile.Seek(int64(yuvUVSize(w, h)), 1)
 	}
