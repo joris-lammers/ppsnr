@@ -3,11 +3,13 @@
 package main
 
 import (
+	"bufio"
 	"flag"
 	"fmt"
 	"math"
 	"os"
 	"runtime"
+	"strconv"
 	"sync"
 )
 
@@ -15,17 +17,19 @@ var flagWidth int
 var flagHeight int
 var flagYuvRef string
 var flagYuvCompr string
+var flagDtsFile string
 var flagVerbose bool
 
 func init() {
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Usage: %s -w WIDTH -h HEIGHT -r REF_YUV -c COMPR_YUV -v\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "Usage: %s -w WIDTH -h HEIGHT -r REF_YUV -c COMPR_YUV [-v] [- d DTS]\n", os.Args[0])
 		flag.PrintDefaults()
 	}
 	flag.IntVar(&flagWidth, "w", 1280, "Width of video")
 	flag.IntVar(&flagHeight, "h", 720, "Height of video")
 	flag.StringVar(&flagYuvRef, "r", "input.yuv", "Reference YUV")
 	flag.StringVar(&flagYuvCompr, "c", "output.yuv", "Compressed/Output YUV")
+	flag.StringVar(&flagDtsFile, "d", "", "File containing DTS values for each picture")
 	flag.BoolVar(&flagVerbose, "v", false, "Verbose output")
 }
 
@@ -119,14 +123,37 @@ func calculatePsnr(refFN, comprFN string, w, h int) (psnrValues []float64) {
 	return
 }
 
+func readDts(fileName string) []int64 {
+	dts, err := os.Open(fileName)
+	if err != nil {
+		// No DTS file provided
+		return []int64{}
+	}
+	dtsValues := []int64{}
+	fileReader := bufio.NewReader(dts)
+	for line, err := fileReader.ReadString('\n'); err == nil; line, err = fileReader.ReadString('\n') {
+		dtsAsInt64, errConv := strconv.ParseInt(line[:len(line)-1], 10, 64)
+		if errConv != nil {
+			fmt.Printf("%v", errConv)
+		}
+		dtsValues = append(dtsValues, dtsAsInt64)
+	}
+	return dtsValues
+}
+
 func main() {
 	flag.Parse()
 	if flagVerbose {
 		fmt.Printf("Number of CPU cores %d\n", runtime.NumCPU())
 	}
+	dts := readDts(flagDtsFile)
 	psnrValues := calculatePsnr(flagYuvRef, flagYuvCompr, flagWidth, flagHeight)
 
 	for frameNr, p := range psnrValues {
-		fmt.Printf("PSNR for frame %d is %3.2f\n", frameNr, p)
+		var d int64 = -1
+		if frameNr < len(dts) {
+			d = dts[frameNr]
+		}
+		fmt.Printf("PSNR for frame %d DTS %10d is %3.2f\n", frameNr, d, p)
 	}
 }
