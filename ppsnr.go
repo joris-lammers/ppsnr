@@ -9,7 +9,9 @@ import (
 	"math"
 	"os"
 	"runtime"
+	"sort"
 	"strconv"
+	"strings"
 	"sync"
 )
 
@@ -19,18 +21,40 @@ var flagYuvRef string
 var flagYuvCompr string
 var flagDtsFile string
 var flagVerbose bool
+var flagCodingOrder bool
+
+type DtsPts struct {
+	DTS, PTS int64
+}
+
+// Sorting by the DTS value
+// Implements sort.Interface
+type ByDts []DtsPts
+
+func (d ByDts) Len() int           { return len(d) }
+func (d ByDts) Swap(i, j int)      { d[i], d[j] = d[j], d[i] }
+func (d ByDts) Less(i, j int) bool { return d[i].DTS < d[j].DTS }
+
+// Sorting by PTS value
+// Implements sort.Interface
+type ByPts []DtsPts
+
+func (d ByPts) Len() int           { return len(d) }
+func (d ByPts) Swap(i, j int)      { d[i], d[j] = d[j], d[i] }
+func (d ByPts) Less(i, j int) bool { return d[i].PTS < d[j].PTS }
 
 func init() {
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Usage: %s -w WIDTH -h HEIGHT -r REF_YUV -c COMPR_YUV [-v] [- d DTS]\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "Usage: %s -w WIDTH -h HEIGHT -r REF_YUV -c COMPR_YUV [-v] [- d PTSDTS] [-coding-order]\n", os.Args[0])
 		flag.PrintDefaults()
 	}
 	flag.IntVar(&flagWidth, "w", 1280, "Width of video")
 	flag.IntVar(&flagHeight, "h", 720, "Height of video")
 	flag.StringVar(&flagYuvRef, "r", "input.yuv", "Reference YUV")
 	flag.StringVar(&flagYuvCompr, "c", "output.yuv", "Compressed/Output YUV")
-	flag.StringVar(&flagDtsFile, "d", "", "File containing DTS values for each picture")
+	flag.StringVar(&flagDtsFile, "d", "", "File containing PTSDTS values for each picture as csv (PTS,DTS)")
 	flag.BoolVar(&flagVerbose, "v", false, "Verbose output")
+	flag.BoolVar(&flagCodingOrder, "coding-order", false, "Assume YUV in coding order")
 }
 
 // NewWorkersPool starts n workers
@@ -123,22 +147,28 @@ func calculatePsnr(refFN, comprFN string, w, h int) (psnrValues []float64) {
 	return
 }
 
-func readDts(fileName string) []int64 {
+func readDtsPts(fileName string) []DtsPts {
 	dts, err := os.Open(fileName)
 	if err != nil {
 		// No DTS file provided
-		return []int64{}
+		return []DtsPts{}
 	}
-	dtsValues := []int64{}
-	fileReader := bufio.NewReader(dts)
-	for line, err := fileReader.ReadString('\n'); err == nil; line, err = fileReader.ReadString('\n') {
-		dtsAsInt64, errConv := strconv.ParseInt(line[:len(line)-1], 10, 64)
+	dtsPtsValues := []DtsPts{}
+	fileReader := bufio.NewScanner(dts)
+	for fileReader.Scan() {
+		splitted := strings.Split(fileReader.Text(), ",")
+		ptsAsInt64, errConv := strconv.ParseInt(splitted[0], 10, 64)
 		if errConv != nil {
-			fmt.Printf("%v", errConv)
+			fmt.Printf("Error converting PTS: %v\n", errConv)
 		}
-		dtsValues = append(dtsValues, dtsAsInt64)
+		dtsAsInt64, errConv := strconv.ParseInt(splitted[1], 10, 64)
+		if errConv != nil {
+			fmt.Printf("Error converting DTS: %v\n", errConv)
+		}
+
+		dtsPtsValues = append(dtsPtsValues, DtsPts{dtsAsInt64, ptsAsInt64})
 	}
-	return dtsValues
+	return dtsPtsValues
 }
 
 func main() {
@@ -146,14 +176,21 @@ func main() {
 	if flagVerbose {
 		fmt.Printf("Number of CPU cores %d\n", runtime.NumCPU())
 	}
-	dts := readDts(flagDtsFile)
+	dtsAndPts := readDtsPts(flagDtsFile)
 	psnrValues := calculatePsnr(flagYuvRef, flagYuvCompr, flagWidth, flagHeight)
 
+	if flagCodingOrder {
+		sort.Sort(ByDts(dtsAndPts))
+	} else {
+		sort.Sort(ByPts(dtsAndPts))
+	}
+
 	for frameNr, p := range psnrValues {
-		var d int64 = -1
-		if frameNr < len(dts) {
-			d = dts[frameNr]
+		var dts, pts int64 = -1, -1
+		if frameNr < len(dtsAndPts) {
+			dts = dtsAndPts[frameNr].DTS
+			pts = dtsAndPts[frameNr].PTS
 		}
-		fmt.Printf("PSNR for frame %d DTS %10d is %3.2f\n", frameNr, d, p)
+		fmt.Printf("PSNR for frame %d DTS %10d PTS %10d is %3.2f\n", frameNr, dts, pts, p)
 	}
 }
